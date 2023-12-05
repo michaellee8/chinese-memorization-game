@@ -14,7 +14,12 @@
     "type-check": "tsc"
   },
   "dependencies": {
+    "@emotion/react": "^11.11.1",
+    "@emotion/styled": "^11.11.0",
+    "@fontsource/roboto": "^5.0.8",
     "@hkdse-practice/hkdse-practice-api-public": "^0.0.9",
+    "@mui/icons-material": "^5.14.19",
+    "@mui/material": "^5.14.20",
     "@reduxjs/toolkit": "^1.8.1",
     "firebase": "^10.7.0",
     "react": "^18.2.0",
