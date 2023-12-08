@@ -13,7 +13,7 @@ import {
   Typography,
   colors,
 } from "@mui/material"
-import { Component, useEffect, useState } from "react"
+import { Component, ReactNode, useEffect, useState } from "react"
 import {
   Article,
   CreateGameSessionRequest,
@@ -34,7 +34,7 @@ function swapArrayElement<T>(arr: T[], i1: number, i2: number) {
 
 interface GameProps {
   coreServiceClient: CoreServicePromiseClient
-  user?: User
+  user: User | null | undefined
 }
 
 interface GameState {
@@ -121,6 +121,26 @@ export class Game extends Component<GameProps, GameState> {
 
     this.freezeGame = false
     this.numOfIncorrectChosen = 0
+  }
+
+  handleSelectArticleId = (evt: SelectChangeEvent<string>) => {
+    const articleId = evt.target.value
+    if (!articleId) {
+      return
+    }
+    const fetchGameSession = async () => {
+      const req = new CreateGameSessionRequest()
+      req.setArticleId(articleId)
+      const res = await this.coreServiceClient.createGameSession(req)
+      this.currentGameSession = res.getGameSession()?.toObject() ?? null
+      this.paragraphIdx = 0
+      this.startTime = new Date()
+      this.loadParagraph()
+      this.isLoading = false
+      this.showTimer = true
+      this.forceUpdate()
+    }
+    fetchGameSession()
   }
 
   handleGetTipsButtonTapped() {
@@ -296,9 +316,9 @@ export class Game extends Component<GameProps, GameState> {
         const result = new GameSessionResult()
         result.setScore(this.score)
         result.setSuccess(true)
-        const timeTakem = new google_protobuf_duration_pb.Duration()
-        timeTakem.setSeconds(this.freezedTimeTaken)
-        result.setTimeTaken(timeTakem)
+        const timeTaken = new google_protobuf_duration_pb.Duration()
+        timeTaken.setSeconds(this.freezedTimeTaken)
+        result.setTimeTaken(timeTaken)
         const submittedAt = new google_protobuf_timestamp_pb.Timestamp()
         submittedAt.setSeconds(new Date().getTime() / 1000)
         result.setSubmittedAt(submittedAt)
@@ -321,5 +341,44 @@ export class Game extends Component<GameProps, GameState> {
     if (this.currentTimeRefresherHandler) {
       clearInterval(this.currentTimeRefresherHandler)
     }
+  }
+
+  render(): ReactNode {
+    if (!this.props.user) {
+      return (
+        <>
+          <Container sx={{ width: "100%", height: "100%" }}>
+            <Typography align="center">
+              如長時間未跳轉，請重新整理頁面。
+            </Typography>
+          </Container>
+        </>
+      )
+    }
+    return (
+      <>
+        <AppBar position="fixed" color="transparent">
+          <Toolbar>
+            <FormControl>
+              <Select
+                sx={{ m: 1, minWidth: 120 }}
+                value={this.articleId}
+                onChange={this.handleSelectArticleId}
+                displayEmpty
+              >
+                <MenuItem value="">
+                  <em>請選擇文章</em>
+                </MenuItem>
+                {this.state.articlesList.map((article) => (
+                  <MenuItem value={article.id} key={article.id}>
+                    {article.name}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+          </Toolbar>
+        </AppBar>
+      </>
+    )
   }
 }
