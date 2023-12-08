@@ -1,4 +1,4 @@
-import { getAuth } from "firebase/auth"
+import { User, getAuth } from "firebase/auth"
 import { useCoreServiceClient } from "./CoreService"
 import { useAuthState } from "react-firebase-hooks/auth"
 import {
@@ -13,276 +13,313 @@ import {
   Typography,
   colors,
 } from "@mui/material"
-import { useEffect, useState } from "react"
+import { Component, useEffect, useState } from "react"
 import {
   Article,
   CreateGameSessionRequest,
   GameSession,
+  GameSessionResult,
   ListArticlesRequest,
+  SubmitGameSessionResultRequest,
 } from "@hkdse-practice/hkdse-practice-api-public/lib/dsepractice/chinese/v1alpha1/core_types_pb"
+import { CoreServicePromiseClient } from "@hkdse-practice/hkdse-practice-api-public/lib/dsepractice/chinese/v1alpha1/core_service_grpc_web_pb"
+import * as google_protobuf_duration_pb from "google-protobuf/google/protobuf/duration_pb"
+import * as google_protobuf_timestamp_pb from "google-protobuf/google/protobuf/timestamp_pb"
 
-function swapKeyOfMap<K, V>(m: Map<K, V>, k1: K, k2: K) {
-  const v1 = m.get(k1)
-  const v2 = m.get(k2)
-  m.set(k1, v2!!)
-  m.set(k2, v1!!)
+function swapArrayElement<T>(arr: T[], i1: number, i2: number) {
+  const tmp = arr[i1]
+  arr[i1] = arr[i2]
+  arr[i2] = tmp
 }
 
-export function Game() {
-  const coreServiceClient = useCoreServiceClient()
-  const auth = getAuth()
-  const [user] = useAuthState(auth)
-  const [articles, setArticles] = useState([] as Article.AsObject[])
-  useEffect(() => {
-    async function fetchArticles() {
-      const req = new ListArticlesRequest()
-      const res = await coreServiceClient.listArticles(req)
-      setArticles(res.toObject().articlesList)
+interface GameProps {
+  coreServiceClient: CoreServicePromiseClient
+  user?: User
+}
+
+interface GameState {
+  articleId: string
+  articlesList: Article.AsObject[]
+}
+
+// bad react code, just want to copy SwiftUI logic, don't learn from his
+export class Game extends Component<GameProps, GameState> {
+  state = { articleId: "", articlesList: [] as Article.AsObject[] }
+
+  gameSessionTimeSeconds = 20 * 60
+  numOfTipsPerParagraph = 5
+  numOfChoicesInTip = 3
+
+  isLoading = true
+  currentTimeRefresherHandler?: NodeJS.Timeout
+  get coreServiceClient() {
+    return this.props.coreServiceClient
+  }
+  get articleId() {
+    return this.state.articleId
+  }
+  get articleTitle() {
+    if (!this.state.articleId) {
+      return ""
     }
-    fetchArticles()
-  }, [])
-
-  const gameSessionTimeSeconds = 20 * 60
-  const numOfTipsPerParagraph = 5
-  const numOfChoicesInTip = 3
-
-  const [articleId, setArticleId] = useState("")
-  const [isLoading, setIsLoading] = useState(true)
-  const articleTitle =
-    articles.find((article) => article.id === articleId)?.name ?? null
-  const [textParagraphs, setTextParagraphs] = useState([] as string[])
-  const [slots, setSlots] = useState(Array(12).fill(" "))
-  const [colorOnSlots, setColorOnSlots] = useState(Array(12).fill("white"))
-  const [optionToSlotMap, setOptionToSlotMap] = useState(
-    new Map<number, number>(),
-  )
-  const [slotToOptionMap, setSlotToOptionMap] = useState(
-    new Map<number, number>(),
-  )
-  const [optionSequenceIdx, setOptionSequenceIdx] = useState(0)
-  const [paragraphIdx, setParagraphIdx] = useState(0)
-
-  const [currentTime, setCurrentTime] = useState(new Date())
-  const [startTime, setStartTime] = useState(new Date())
-  const [showTimer, setShowTimer] = useState(false)
-  const [showFreezedTimeTaken, setShowFreezedTimeTaken] = useState(false)
-  const [freezedTimeTaken, setFreezedTimeTaken] = useState(0.0) // seconds
-  const [freezeGame, setFreezeGame] = useState(false)
-  const [showEndGameModal, setShowEndGameModal] = useState(false)
-  const [remainingTips, setRemainingTips] = useState(0)
-  const [numOfIncorrectChosen, setNumOfIncorrectChosen] = useState(0)
-
-  // calculate score
-  const wordsAnswered = textParagraphs
-    .map((s) => s.length)
-    .reduce((a, b) => a + b, 0)
-  const timeTaken = showFreezedTimeTaken
-    ? freezedTimeTaken
-    : (currentTime.getTime() - currentTime.getTime()) / 1000
-  const score = Math.round(
-    wordsAnswered * 500 - timeTaken * 10 - numOfIncorrectChosen * 150,
-  )
-
-  const [currentGameSession, setCurrentGameSession] =
-    useState<GameSession.AsObject | null>(null)
-
-  function resetContent() {
-    setIsLoading(true)
-    setTextParagraphs([])
-    setSlots(Array(12).fill(" "))
-    setColorOnSlots(Array(12).fill("white"))
-
-    setCurrentTime(new Date())
-    setStartTime(new Date())
-    setShowTimer(false)
-    setShowFreezedTimeTaken(false)
-    setFreezedTimeTaken(0.0)
-
-    setFreezeGame(false)
-
-    setNumOfIncorrectChosen(0)
+    return this.state.articlesList.find((a) => a.id)?.name ?? ""
   }
+  textParagraphs = [] as string[]
 
-  function handleSelectArticleId(evt: SelectChangeEvent<string>) {
-    const articleId = evt.target.value
-    if (!articleId) {
-      return
-    }
-    async function fetchGameSession() {
-      const req = new CreateGameSessionRequest()
-      req.setArticleId(articleId)
-      const res = await coreServiceClient.createGameSession(req)
-      setCurrentGameSession(res.getGameSession()?.toObject() ?? null)
-      setParagraphIdx(0)
-      setStartTime(new Date())
-      loadParagraph()
-      setIsLoading(false)
-      setShowTimer(true)
-    }
-    fetchGameSession()
-  }
+  slots = Array(12).fill(" ") as string[]
+  colorOnSlots = Array(12).fill("white") as string[]
 
-  function swapOptions(o1: number, o2: number) {
-    const s1 = optionToSlotMap.get(o1)
-    const s2 = optionToSlotMap.get(o2)
-    setOptionToSlotMap((om) => {
-      const nm = new Map(om)
-      swapKeyOfMap(nm, o1, o2)
-      return nm
-    })
-    setSlotToOptionMap((om) => {
-      const nm = new Map(om)
-      swapKeyOfMap(nm, s1, s2)
-      return nm
-    })
-  }
+  optionToSlotMap = Array(12).fill(-1) as number[]
+  slotToOptionMap = Array(12).fill(-1) as number[]
+  optionSequenceIdx = 0
+  paragraphIdx = 0
 
-  function swapSlots(s1: number, s2: number) {
-    const o1 = slotToOptionMap.get(s1)
-    const o2 = slotToOptionMap.get(s2)
-    setOptionToSlotMap((om) => {
-      const nm = new Map(om)
-      swapKeyOfMap(nm, o1, o2)
-      return nm
-    })
-    setSlotToOptionMap((om) => {
-      const nm = new Map(om)
-      swapKeyOfMap(nm, s1, s2)
-      return nm
-    })
-  }
+  currentTime = new Date()
+  startTime = new Date()
+  showTimer = false
+  showFreezedTimeTaken = false
+  freezedTimeTaken = 0.0 // seconds
 
-  function getOption(idx: number): string {
-    return slots[optionToSlotMap.get(idx)!!]
-  }
+  freezeGame = false
+  showEndGameModal = false
 
-  function setOption(idx: number, value: string) {
-    slots[optionToSlotMap.get(idx)!!] = value
-  }
+  remainingTips = 0
 
-  function resetColorOfSlots() {
-    const paragraph = currentGameSession!.data!.paragraphsList[paragraphIdx]
-    const numOfSlots = paragraph.sequenceSize
-    setColorOnSlots(Array(numOfSlots).fill("white"))
-  }
+  numOfIncorrectChosen = 0
 
-  function loadParagraph() {
-    const paragraph = currentGameSession!.data!.paragraphsList[paragraphIdx]
-    setTextParagraphs((tp) => [...tp, paragraph.startTipsList.join("")])
-    setOptionSequenceIdx(0)
-    const numOfSlots = paragraph.sequenceSize
-    setSlots(Array(numOfSlots).fill(" "))
-    setColorOnSlots(Array(numOfSlots).fill("white"))
-    const otsm = new Map<number, number>()
-    const stom = new Map<number, number>()
-    while (optionSequenceIdx < numOfSlots) {
-      const option = paragraph.optionsSequenceList[optionSequenceIdx]
-      console.assert(slots[option.position] === " ")
-      const newSlots = [...slots]
-      newSlots[option.position] = option.content
-      setSlots(newSlots)
-      setOptionSequenceIdx((i) => i + 1)
-    }
-    setRemainingTips(numOfTipsPerParagraph)
-  }
-
-  function handleChoiceClick(chosenSlotIdx: number) {
-    if (freezeGame) {
-      return
-    }
-    const paragraph = currentGameSession!.data!.paragraphsList[paragraphIdx]
-    const solutionIdx = optionSequenceIdx - paragraph.sequenceSize
-    const solution = paragraph.segmentsList[solutionIdx]
-    if (solution !== slots[chosenSlotIdx]) {
-      handleChosenWrongOption(chosenSlotIdx)
-      return
-    }
-    resetColorOfSlots()
-    flashSlotColor(chosenSlotIdx, "green")
-    let nextOption = paragraph.optionsSequenceList[optionSequenceIdx]
-    if (optionToSlotMap.get(nextOption.position) !== chosenSlotIdx) {
-      swapSlots(optionToSlotMap.get(nextOption.position)!, chosenSlotIdx)
-    }
-    setOption(nextOption.position, nextOption.content)
-    setTextParagraphs((oldTextParagraphs) => {
-      const ret = [...oldTextParagraphs]
-      ret[ret.length - 1] += solution
-      return ret
-    })
-    setOptionSequenceIdx((idx) => idx + 1)
-    if (
-      optionSequenceIdx - paragraph.sequenceSize >=
-      paragraph.segmentsList.length
-    ) {
-      finishParagraph()
-    }
-  }
-
-  function handleChosenWrongOption(chosenSlotIdx: number) {
-    setNumOfIncorrectChosen((i) => i + 1)
-    flashSlotColor(chosenSlotIdx, "red")
-  }
-
-  function flashSlotColor(chosenSlotIdx: number, color: string) {
-    setColorOnSlots((arr) => [
-      ...arr.slice(0, chosenSlotIdx),
-      color,
-      ...arr.slice(chosenSlotIdx + 1),
-    ])
-    setTimeout(() => {
-      setColorOnSlots((arr) => [
-        ...arr.slice(0, chosenSlotIdx),
-        "white",
-        ...arr.slice(chosenSlotIdx + 1),
-      ])
-    }, 200)
-  }
-
-  function setSlotColor(chosenSlotIdx: number, color: string) {
-    setColorOnSlots((arr) => [
-      ...arr.slice(0, chosenSlotIdx),
-      color,
-      ...arr.slice(chosenSlotIdx + 1),
-    ])
-  }
-
-  function  finishParagraph() {
-    setParagraphIdx(idx => idx + 1)
-    if (paragraphIdx >= curr)
-  }
-
-  if (!user) {
-    return (
-      <>
-        <Container sx={{ width: "100%", height: "100%" }}>
-          <Typography align="center">
-            如長時間未跳轉，請重新整理頁面。
-          </Typography>
-        </Container>
-      </>
+  get score(): number {
+    const wordsAnswered = this.textParagraphs
+      .map((p) => p.length)
+      .reduce((a, b) => a + b, 0)
+    const timeTaken = this.showFreezedTimeTaken
+      ? this.freezedTimeTaken
+      : (this.currentTime.getTime() - this.startTime.getTime()) / 1000
+    return Math.round(
+      wordsAnswered * 500 - timeTaken * 10 - this.numOfIncorrectChosen * 150,
     )
   }
-  return (
-    <>
-      <AppBar position="fixed" color="transparent">
-        <Toolbar>
-          <FormControl>
-            <Select
-              sx={{ m: 1, minWidth: 120 }}
-              value={articleId}
-              onChange={handleSelectArticleId}
-              displayEmpty
-            >
-              <MenuItem value="">
-                <em>請選擇文章</em>
-              </MenuItem>
-              {articles.map((article) => (
-                <MenuItem value={article.id}>{article.name}</MenuItem>
-              ))}
-            </Select>
-          </FormControl>
-        </Toolbar>
-      </AppBar>
-    </>
-  )
+
+  currentGameSession: GameSession.AsObject | null = null
+
+  fetchArticles = async () => {
+    const req = new ListArticlesRequest()
+    const res = await this.props.coreServiceClient.listArticles(req)
+    this.setState({ articlesList: res.toObject().articlesList })
+  }
+
+  resetContent = () => {
+    this.isLoading = true
+    this.textParagraphs = []
+    this.slots = Array(12).fill(" ")
+    this.colorOnSlots = Array(12).fill("white")
+
+    this.currentTime = new Date()
+    this.startTime = new Date()
+    this.showTimer = false
+    this.showFreezedTimeTaken = false
+    this.freezedTimeTaken = 0.0
+
+    this.freezeGame = false
+    this.numOfIncorrectChosen = 0
+  }
+
+  handleGetTipsButtonTapped() {
+    if (this.freezeGame) {
+      return
+    }
+    if (this.remainingTips <= 0) {
+      return
+    }
+    const paragraph =
+      this.currentGameSession!.data!.paragraphsList[this.paragraphIdx]
+    const solutionIdx = this.optionSequenceIdx - paragraph.sequenceSize
+    const solution = paragraph.segmentsList[solutionIdx]
+    const correctSlotIdx = this.slots.indexOf(solution)
+    if (correctSlotIdx === -1) {
+      return
+    }
+    const tipsIdx = [correctSlotIdx]
+    for (let i = 2; i <= this.numOfChoicesInTip; i++) {
+      while (true) {
+        const tipIdx = Math.floor(Math.random() * paragraph.sequenceSize)
+        if (tipsIdx.indexOf(tipIdx) === -1) {
+          tipsIdx.push(tipIdx)
+          break
+        }
+      }
+    }
+    for (let tipIdx of tipsIdx) {
+      this.setSlotColor(tipIdx, "yellow")
+    }
+    this.remainingTips -= 1
+  }
+
+  loadGameSession = async () => {
+    this.isLoading = true
+    this.showTimer = false
+
+    const req = new CreateGameSessionRequest()
+    req.setArticleId(this.state.articleId)
+    const res = await this.coreServiceClient.createGameSession(req)
+    const gameSession = res.getGameSession()?.toObject() ?? null
+    this.currentGameSession = gameSession
+    this.paragraphIdx = 0
+    this.startTime = new Date()
+    this.loadParagraph()
+    this.isLoading = false
+    this.showTimer = true
+  }
+
+  swapOptions = (o1: number, o2: number) => {
+    const s1 = this.optionToSlotMap[o1]
+    const s2 = this.optionToSlotMap[o2]
+    swapArrayElement(this.optionToSlotMap, o1, o2)
+    swapArrayElement(this.slotToOptionMap, s1, s2)
+  }
+
+  swapSlots = (s1: number, s2: number) => {
+    const o1 = this.slotToOptionMap[s1]
+    const o2 = this.slotToOptionMap[s2]
+    swapArrayElement(this.optionToSlotMap, o1, o2)
+    swapArrayElement(this.slotToOptionMap, s1, s2)
+  }
+
+  getOption = (idx: number): string => {
+    return this.slots[this.optionToSlotMap[idx]]
+  }
+
+  setOption = (idx: number, value: string) => {
+    this.slots[this.optionToSlotMap[idx]] = value
+  }
+
+  resetColorOfSlots = () => {
+    const paragraph =
+      this.currentGameSession!.data!.paragraphsList[this.paragraphIdx]
+    const numOfSlots = paragraph.sequenceSize
+    this.colorOnSlots = Array(numOfSlots).fill("white")
+  }
+
+  loadParagraph = () => {
+    const paragraph =
+      this.currentGameSession!.data!.paragraphsList[this.paragraphIdx]
+    this.textParagraphs.push(paragraph.startTipsList.join(""))
+    this.optionSequenceIdx = 0
+    const numOfSlots = paragraph.sequenceSize
+    this.slots = Array(numOfSlots).fill(" ")
+    this.colorOnSlots = Array(numOfSlots).fill("white")
+    this.optionToSlotMap = Array(12).fill(-1) as number[]
+    this.slotToOptionMap = Array(12).fill(-1) as number[]
+    for (let i = 0; i < numOfSlots; i++) {
+      this.optionToSlotMap[i] = i
+      this.slotToOptionMap[i] = i
+    }
+    while (this.optionSequenceIdx < numOfSlots) {
+      let option = paragraph.optionsSequenceList[this.optionSequenceIdx]
+      console.assert(this.slots[option.position] === " ")
+      this.slots[option.position] = option.content
+      this.optionSequenceIdx += 1
+    }
+    this.remainingTips = this.numOfTipsPerParagraph
+  }
+
+  handleChoiceClick = (chosenSlotIdx: number) => {
+    if (this.freezeGame) {
+      return
+    }
+    const paragraph =
+      this.currentGameSession!.data!.paragraphsList[this.paragraphIdx]
+    const solutionIdx = this.optionSequenceIdx - paragraph.sequenceSize
+    const solution = paragraph.segmentsList[solutionIdx]
+    if (solution !== this.slots[chosenSlotIdx]) {
+      this.handleChosenWrongOption(chosenSlotIdx)
+      return
+    }
+    this.resetColorOfSlots()
+    this.flashSlotColor(chosenSlotIdx, "green")
+    const nextOption = paragraph.optionsSequenceList[this.optionSequenceIdx]
+    if (this.optionToSlotMap[nextOption.position] !== chosenSlotIdx) {
+      this.swapSlots(this.optionToSlotMap[nextOption.position], chosenSlotIdx)
+    }
+    this.setOption(nextOption.position, nextOption.content)
+    this.textParagraphs[this.textParagraphs.length - 1] += solution
+    this.optionSequenceIdx += 1
+
+    // handle paragraph is finished
+    if (
+      this.optionSequenceIdx - paragraph.sequenceSize >=
+      paragraph.segmentsList.length
+    ) {
+      this.finishParagraph()
+    }
+  }
+
+  handleChosenWrongOption = (chosenSlotIdx: number) => {
+    this.numOfIncorrectChosen += 1
+    this.flashSlotColor(chosenSlotIdx, "red")
+  }
+
+  flashSlotColor = (chosenSlotIdx: number, color: string) => {
+    const period = 0.2 * 1000
+    this.colorOnSlots[chosenSlotIdx] = color
+    setTimeout(() => {
+      this.colorOnSlots[chosenSlotIdx] = "white"
+      this.forceUpdate()
+    }, period)
+  }
+
+  setSlotColor = (chosenSlotIdx: number, color: string) => {
+    this.colorOnSlots[chosenSlotIdx] = color
+  }
+
+  finishParagraph = () => {
+    this.paragraphIdx += 1
+    if (
+      this.paragraphIdx >= this.currentGameSession!.data!.paragraphsList.length
+    ) {
+      this.finishGame()
+      return
+    }
+    this.loadParagraph()
+  }
+
+  finishGame = () => {
+    this.freezeGame = true
+    this.showEndGameModal = true
+    this.freezedTimeTaken =
+      (this.currentTime.getTime() - this.startTime.getTime()) / 1000
+    this.showFreezedTimeTaken = true
+
+    const submitResult = async () => {
+      try {
+        const req = new SubmitGameSessionResultRequest()
+        req.setSessionId(this.currentGameSession?.id ?? "")
+        const result = new GameSessionResult()
+        result.setScore(this.score)
+        result.setSuccess(true)
+        const timeTakem = new google_protobuf_duration_pb.Duration()
+        timeTakem.setSeconds(this.freezedTimeTaken)
+        result.setTimeTaken(timeTakem)
+        const submittedAt = new google_protobuf_timestamp_pb.Timestamp()
+        submittedAt.setSeconds(new Date().getTime() / 1000)
+        result.setSubmittedAt(submittedAt)
+        await this.coreServiceClient.submitGameSessionResult(req)
+      } catch (err) {
+        console.error("submitGameSessionResult", err)
+      }
+    }
+  }
+
+  componentDidMount(): void {
+    this.fetchArticles()
+    this.currentTimeRefresherHandler = setInterval(() => {
+      this.currentTime = new Date()
+      this.forceUpdate()
+    }, 0.1 * 1000)
+  }
+
+  componentWillUnmount(): void {
+    if (this.currentTimeRefresherHandler) {
+      clearInterval(this.currentTimeRefresherHandler)
+    }
+  }
 }
