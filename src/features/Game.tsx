@@ -3,17 +3,25 @@ import { useCoreServiceClient } from "./CoreService"
 import { useAuthState } from "react-firebase-hooks/auth"
 import {
   AppBar,
+  Button,
   Container,
+  Dialog,
+  DialogContent,
+  DialogContentText,
+  DialogTitle,
   FormControl,
   Grid,
+  IconButton,
   MenuItem,
   Select,
   SelectChangeEvent,
+  Stack,
   Toolbar,
   Typography,
   colors,
+  styled,
 } from "@mui/material"
-import { Component, ReactNode, useEffect, useState } from "react"
+import { Component, ReactNode, createRef, useEffect, useState } from "react"
 import {
   Article,
   CreateGameSessionRequest,
@@ -25,6 +33,9 @@ import {
 import { CoreServicePromiseClient } from "@hkdse-practice/hkdse-practice-api-public/lib/dsepractice/chinese/v1alpha1/core_service_grpc_web_pb"
 import * as google_protobuf_duration_pb from "google-protobuf/google/protobuf/duration_pb"
 import * as google_protobuf_timestamp_pb from "google-protobuf/google/protobuf/timestamp_pb"
+import CloseIcon from "@mui/icons-material/Close"
+
+const Offset = styled("div")(({ theme }) => theme.mixins.toolbar)
 
 function swapArrayElement<T>(arr: T[], i1: number, i2: number) {
   const tmp = arr[i1]
@@ -66,7 +77,7 @@ export class Game extends Component<GameProps, GameState> {
   }
   textParagraphs = [] as string[]
 
-  slots = Array(12).fill(" ") as string[]
+  slots = Array(12).fill("-") as string[]
   colorOnSlots = Array(12).fill("white") as string[]
 
   optionToSlotMap = Array(12).fill(-1) as number[]
@@ -101,6 +112,8 @@ export class Game extends Component<GameProps, GameState> {
 
   currentGameSession: GameSession.AsObject | null = null
 
+  textRef = createRef<HTMLDivElement>()
+
   fetchArticles = async () => {
     const req = new ListArticlesRequest()
     const res = await this.props.coreServiceClient.listArticles(req)
@@ -110,7 +123,7 @@ export class Game extends Component<GameProps, GameState> {
   resetContent = () => {
     this.isLoading = true
     this.textParagraphs = []
-    this.slots = Array(12).fill(" ")
+    this.slots = Array(12).fill("-")
     this.colorOnSlots = Array(12).fill("white")
 
     this.currentTime = new Date()
@@ -125,10 +138,12 @@ export class Game extends Component<GameProps, GameState> {
 
   handleSelectArticleId = (evt: SelectChangeEvent<string>) => {
     const articleId = evt.target.value
-    if (!articleId) {
+    if (!articleId || this.articleId === articleId) {
       return
     }
+    this.state.articleId = articleId
     const fetchGameSession = async () => {
+      this.resetContent()
       const req = new CreateGameSessionRequest()
       req.setArticleId(articleId)
       const res = await this.coreServiceClient.createGameSession(req)
@@ -225,7 +240,7 @@ export class Game extends Component<GameProps, GameState> {
     this.textParagraphs.push(paragraph.startTipsList.join(""))
     this.optionSequenceIdx = 0
     const numOfSlots = paragraph.sequenceSize
-    this.slots = Array(numOfSlots).fill(" ")
+    this.slots = Array(numOfSlots).fill("-")
     this.colorOnSlots = Array(numOfSlots).fill("white")
     this.optionToSlotMap = Array(12).fill(-1) as number[]
     this.slotToOptionMap = Array(12).fill(-1) as number[]
@@ -235,7 +250,7 @@ export class Game extends Component<GameProps, GameState> {
     }
     while (this.optionSequenceIdx < numOfSlots) {
       let option = paragraph.optionsSequenceList[this.optionSequenceIdx]
-      console.assert(this.slots[option.position] === " ")
+      console.assert(this.slots[option.position] === "-")
       this.slots[option.position] = option.content
       this.optionSequenceIdx += 1
     }
@@ -357,13 +372,19 @@ export class Game extends Component<GameProps, GameState> {
     }
     return (
       <>
-        <AppBar position="fixed" color="transparent">
-          <Toolbar>
+        <AppBar position="sticky" color="transparent">
+          <Toolbar sx={{ justifyContent: "space-between" }}>
+            <Typography variant="body1">
+              {this.articleId ? this.score : "-"}
+            </Typography>
             <FormControl>
               <Select
-                sx={{ m: 1, minWidth: 120 }}
+                sx={{ m: 1 }}
                 value={this.articleId}
-                onChange={this.handleSelectArticleId}
+                onChange={(evt) => {
+                  this.handleSelectArticleId(evt)
+                  this.forceUpdate()
+                }}
                 displayEmpty
               >
                 <MenuItem value="">
@@ -376,8 +397,113 @@ export class Game extends Component<GameProps, GameState> {
                 ))}
               </Select>
             </FormControl>
+            <Button
+              variant="outlined"
+              onClick={() => {
+                this.handleGetTipsButtonTapped()
+                this.forceUpdate()
+              }}
+            >
+              獲取提示
+            </Button>
           </Toolbar>
         </AppBar>
+        <Stack direction="column">
+          <Offset />
+          <Container sx={{ flexGrow: 1 }} ref={this.textRef}>
+            {this.textParagraphs.map((text, idx) => (
+              <Typography variant="body1" key={idx}>
+                {text}
+              </Typography>
+            ))}
+          </Container>
+          <Offset />
+          <Offset />
+        </Stack>
+        <AppBar
+          position="fixed"
+          color="transparent"
+          sx={{ top: "auto", bottom: 0 }}
+        >
+          <Toolbar>
+            <Grid container spacing={2}>
+              {this.slots.map((_, idx) => (
+                <Grid item xs={2} key={idx}>
+                  <Button
+                    variant="outlined"
+                    onClick={() => {
+                      this.handleChoiceClick(idx)
+                      this.forceUpdate()
+                      if (this.textRef.current) {
+                        this.textRef.current.scrollTop =
+                          this.textRef.current.scrollHeight
+                      }
+                    }}
+                    sx={{
+                      backgroundColor: this.colorOnSlots[idx],
+                      borderColor: "black",
+                      color: "black",
+                      fontWeight: "bold",
+                    }}
+                    disabled={this.freezeGame}
+                  >
+                    {this.slots[idx]}
+                  </Button>
+                </Grid>
+              ))}
+            </Grid>
+          </Toolbar>
+        </AppBar>
+        <Dialog
+          open={this.showEndGameModal}
+          onClose={() => {
+            this.showEndGameModal = false
+            this.forceUpdate()
+            window.location.reload()
+          }}
+          fullScreen
+        >
+          {" "}
+          <AppBar sx={{ position: "relative" }}>
+            <Toolbar>
+              <IconButton
+                edge="end"
+                color="inherit"
+                onClick={() => {
+                  this.showEndGameModal = false
+                  this.forceUpdate()
+                  window.location.reload()
+                }}
+                aria-label="close"
+              >
+                <CloseIcon />
+              </IconButton>
+              <Typography sx={{ ml: 2, flex: 1 }} variant="h6" component="div">
+                遊戲結果
+              </Typography>
+            </Toolbar>
+          </AppBar>
+          <DialogContent>
+            <DialogContentText>分數： {this.score}</DialogContentText>
+            <DialogContentText>
+              用時：{" "}
+              {Math.round(
+                (this.currentTime.getTime() - this.startTime.getTime()) / 1000,
+              )}{" "}
+              秒
+            </DialogContentText>
+            <DialogContentText>
+              遲啲仲會出新 app，麻煩大家幫手 fol 下我哋 ig{" "}
+              <a
+                href="https://www.instagram.com/learnmer/?utm_source=ig_web_button_share_sheet&igshid=MmVlMjlkMTBhMg=="
+                target="_blank"
+              >
+                @learnmer
+              </a>{" "}
+              留意我哋嘅動向啦 🙏。
+            </DialogContentText>
+          </DialogContent>
+        </Dialog>
       </>
     )
   }
