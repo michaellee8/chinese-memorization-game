@@ -1,9 +1,10 @@
 import { defineConfig } from "vitest/config"
 import react from "@vitejs/plugin-react"
+import VitePluginRadar from "vite-plugin-radar"
 
 // https://vitejs.dev/config/
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), VitePluginRadar({ analytics: [{ id: "G-LLEGJGWT7L" }] })],
   server: {
     open: true,
   },
