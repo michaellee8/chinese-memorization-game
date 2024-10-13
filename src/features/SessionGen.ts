@@ -1,7 +1,7 @@
 import { GameSessionData } from "@hkdse-practice/hkdse-practice-api-public/lib/dsepractice/chinese/v1alpha1/core_types_pb"
 import * as config from "./Config"
 
-function getRandomInt(min, max) {
+function getRandomInt(min: number, max: number) {
   const minCeiled = Math.ceil(min)
   const maxFloored = Math.floor(max)
   return Math.floor(Math.random() * (maxFloored - minCeiled) + minCeiled) // The maximum is exclusive and the minimum is inclusive
@@ -20,6 +20,7 @@ export function generateGameSessionDataFromParagraphs(
   const data: GameSessionData.AsObject = {
     paragraphsList: [],
   }
+  return data
   for (const pText of paragraphs) {
     const pWords = pText.split("")
     if (pWords.length < config.startTipsSize + config.optionSequenceSize) {
