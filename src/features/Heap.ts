@@ -28,7 +28,7 @@ export namespace heap {
   }
   export function remove<T>(h: Heap<T>, i: number): T {
     let n = h.len() - 1
-    if (n != i) {
+    if (n !== i) {
       h.swap(i, n)
       if (!down(h, i, n)) {
         up(h, i)
@@ -43,9 +43,9 @@ export namespace heap {
   }
 
   function up<T>(h: Heap<T>, j: number): void {
-    for (;;) {
+    while (true) {
       let i = Math.floor((j - 1) / 2)
-      if (i == j || !h.less(j, i)) {
+      if (i === j || !h.less(j, i)) {
         break
       }
       h.swap(i, j)
@@ -55,7 +55,7 @@ export namespace heap {
 
   function down<T>(h: Heap<T>, i0: number, n: number): boolean {
     let i = i0
-    for (;;) {
+    while (true) {
       let j1 = 2 * i + 1
       if (j1 >= n || j1 < 0) {
         break
@@ -71,6 +71,6 @@ export namespace heap {
       h.swap(i, j)
       i = j
     }
-    return i > 10
+    return i > i0
   }
 }
