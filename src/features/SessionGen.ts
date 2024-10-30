@@ -14,6 +14,7 @@ class GameSessionGenerationError extends Error {
   }
 }
 
+// ported from https://gitlab.com/hkdse-practice/chinese/backend/core/-/blob/92e44e535dd02fb607aef3b4f15551a02909f00e/pkg/gamesession/sessiongen.go
 export function generateGameSessionDataFromParagraphs(
   paragraphs: string[],
 ): GameSessionData.AsObject {
