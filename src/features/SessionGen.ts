@@ -3,13 +3,13 @@ import * as config from "./Config"
 import { PQValuer, PriorityQueue } from "./PriorityQueue"
 import seedrandom from "seedrandom"
 
-function getRandomInt(min: number, max: number, rng: () => number) {
+export function getRandomInt(min: number, max: number, rng: () => number) {
   const minCeiled = Math.ceil(min)
   const maxFloored = Math.floor(max)
   return Math.floor(rng() * (maxFloored - minCeiled) + minCeiled) // The maximum is exclusive and the minimum is inclusive
 }
 
-function shuffleArray<T>(array: T[], rng: () => number) {
+export function shuffleArray<T>(array: T[], rng: () => number) {
   for (let i = array.length - 1; i > 0; i--) {
     let j = Math.floor(rng() * (i + 1))
     ;[array[i], array[j]] = [array[j], array[i]]
