@@ -6,6 +6,8 @@ import {
   shuffleArray,
 } from "./SessionGen"
 
+import articleData from "../articles-data.json"
+
 import { TestClient } from "./TestClient"
 
 test("test generated game session solvable simple", () => {
@@ -15,5 +17,23 @@ test("test generated game session solvable simple", () => {
     let rng = seedrandom(randSrc.toString())
     let tc = new TestClient(data, [s.split("")], rng)
     tc.solve()
+  }
+})
+
+test("test generated game session solvable real", () => {
+  for (let randSrc = 0; randSrc < 100; randSrc++) {
+    articleData.forEach((article) => {
+      let data = generateGameSessionDataFromParagraphs(
+        article.paragraphs,
+        randSrc.toString(),
+      )
+      let rng = seedrandom(randSrc.toString())
+      let tc = new TestClient(
+        data,
+        article.paragraphs.map((p) => p.split("")),
+        rng,
+      )
+      tc.solve()
+    })
   }
 })
