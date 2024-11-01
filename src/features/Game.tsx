@@ -1,6 +1,3 @@
-import { User, getAuth } from "firebase/auth"
-import { useCoreServiceClient } from "./CoreService"
-import { useAuthState } from "react-firebase-hooks/auth"
 import {
   AppBar,
   Button,
@@ -18,22 +15,20 @@ import {
   Stack,
   Toolbar,
   Typography,
-  colors,
   styled,
 } from "@mui/material"
 import { Component, ReactNode, createRef, useEffect, useState } from "react"
 import {
   Article,
-  CreateGameSessionRequest,
   GameSession,
-  GameSessionResult,
-  ListArticlesRequest,
-  SubmitGameSessionResultRequest,
+  GameSessionStatus,
 } from "@hkdse-practice/hkdse-practice-api-public/lib/dsepractice/chinese/v1alpha1/core_types_pb"
-import { CoreServicePromiseClient } from "@hkdse-practice/hkdse-practice-api-public/lib/dsepractice/chinese/v1alpha1/core_service_grpc_web_pb"
-import * as google_protobuf_duration_pb from "google-protobuf/google/protobuf/duration_pb"
-import * as google_protobuf_timestamp_pb from "google-protobuf/google/protobuf/timestamp_pb"
 import CloseIcon from "@mui/icons-material/Close"
+import articlesData from "../articles-data.json"
+import {
+  generateGameSessionDataFromParagraphs,
+  generateRandomSeedString,
+} from "./SessionGen"
 
 const Offset = styled("div")(({ theme }) => theme.mixins.toolbar)
 
@@ -43,10 +38,13 @@ function swapArrayElement<T>(arr: T[], i1: number, i2: number) {
   arr[i2] = tmp
 }
 
-interface GameProps {
-  coreServiceClient: CoreServicePromiseClient
-  user: User | null | undefined
+function* chunks<T>(arr: T[], n: number): Generator<T[], void> {
+  for (let i = 0; i < arr.length; i += n) {
+    yield arr.slice(i, i + n)
+  }
 }
+
+interface GameProps {}
 
 interface GameState {
   articleId: string
@@ -63,9 +61,6 @@ export class Game extends Component<GameProps, GameState> {
 
   isLoading = true
   currentTimeRefresherHandler?: NodeJS.Timeout
-  get coreServiceClient() {
-    return this.props.coreServiceClient
-  }
   get articleId() {
     return this.state.articleId
   }
@@ -98,6 +93,8 @@ export class Game extends Component<GameProps, GameState> {
 
   numOfIncorrectChosen = 0
 
+  randomSeed = ""
+
   get score(): number {
     const wordsAnswered = this.textParagraphs
       .map((p) => p.length)
@@ -115,9 +112,14 @@ export class Game extends Component<GameProps, GameState> {
   textRef = createRef<HTMLDivElement>()
 
   fetchArticles = async () => {
-    const req = new ListArticlesRequest()
-    const res = await this.props.coreServiceClient.listArticles(req)
-    this.setState({ articlesList: res.toObject().articlesList })
+    this.setState({
+      articlesList: articlesData.map((article) => ({
+        id: article.name,
+        name: article.name,
+        isOwnUnlisted: false,
+        isUnlisted: false,
+      })),
+    })
   }
 
   resetContent = () => {
@@ -134,6 +136,7 @@ export class Game extends Component<GameProps, GameState> {
 
     this.freezeGame = false
     this.numOfIncorrectChosen = 0
+    this.randomSeed = ""
   }
 
   handleSelectArticleId = (evt: SelectChangeEvent<string>) => {
@@ -144,10 +147,20 @@ export class Game extends Component<GameProps, GameState> {
     this.state.articleId = articleId
     const fetchGameSession = async () => {
       this.resetContent()
-      const req = new CreateGameSessionRequest()
-      req.setArticleId(articleId)
-      const res = await this.coreServiceClient.createGameSession(req)
-      this.currentGameSession = res.getGameSession()?.toObject() ?? null
+      const article = articlesData.find(
+        (article) => article.name === articleId,
+      )!
+      this.randomSeed = generateRandomSeedString()
+      const gameSessionData = generateGameSessionDataFromParagraphs(
+        article.paragraphs,
+        this.randomSeed,
+      )
+      this.currentGameSession = {
+        articleId: articleId,
+        id: "game-session-id",
+        status: GameSessionStatus.GAME_SESSION_STATUS_ACTIVE,
+        data: gameSessionData,
+      }
       this.paragraphIdx = 0
       this.startTime = new Date()
       this.loadParagraph()
@@ -187,22 +200,6 @@ export class Game extends Component<GameProps, GameState> {
       this.setSlotColor(tipIdx, "yellow")
     }
     this.remainingTips -= 1
-  }
-
-  loadGameSession = async () => {
-    this.isLoading = true
-    this.showTimer = false
-
-    const req = new CreateGameSessionRequest()
-    req.setArticleId(this.state.articleId)
-    const res = await this.coreServiceClient.createGameSession(req)
-    const gameSession = res.getGameSession()?.toObject() ?? null
-    this.currentGameSession = gameSession
-    this.paragraphIdx = 0
-    this.startTime = new Date()
-    this.loadParagraph()
-    this.isLoading = false
-    this.showTimer = true
   }
 
   swapOptions = (o1: number, o2: number) => {
@@ -323,25 +320,6 @@ export class Game extends Component<GameProps, GameState> {
     this.freezedTimeTaken =
       (this.currentTime.getTime() - this.startTime.getTime()) / 1000
     this.showFreezedTimeTaken = true
-
-    const submitResult = async () => {
-      try {
-        const req = new SubmitGameSessionResultRequest()
-        req.setSessionId(this.currentGameSession?.id ?? "")
-        const result = new GameSessionResult()
-        result.setScore(this.score)
-        result.setSuccess(true)
-        const timeTaken = new google_protobuf_duration_pb.Duration()
-        timeTaken.setSeconds(this.freezedTimeTaken)
-        result.setTimeTaken(timeTaken)
-        const submittedAt = new google_protobuf_timestamp_pb.Timestamp()
-        submittedAt.setSeconds(new Date().getTime() / 1000)
-        result.setSubmittedAt(submittedAt)
-        await this.coreServiceClient.submitGameSessionResult(req)
-      } catch (err) {
-        console.error("submitGameSessionResult", err)
-      }
-    }
   }
 
   componentDidMount(): void {
@@ -359,24 +337,18 @@ export class Game extends Component<GameProps, GameState> {
   }
 
   render(): ReactNode {
-    if (!this.props.user) {
-      return (
-        <>
-          <Container sx={{ width: "100%", height: "100%" }}>
-            <Typography align="center">
-              如長時間未跳轉，請重新整理頁面。
-            </Typography>
-          </Container>
-        </>
-      )
-    }
     return (
-      <>
+      <Container sx={{ padding: 0 }}>
         <AppBar position="sticky" color="transparent">
           <Toolbar sx={{ justifyContent: "space-between" }}>
-            <Typography variant="body1">
-              {this.articleId ? this.score : "-"}
-            </Typography>
+            <Stack direction={"column"}>
+              <Typography variant="body1">
+                {this.randomSeed ? this.randomSeed : "-"}
+              </Typography>
+              <Typography variant="body1">
+                {this.articleId ? this.score : "-"}
+              </Typography>
+            </Stack>
             <FormControl>
               <Select
                 sx={{ m: 1 }}
@@ -425,10 +397,14 @@ export class Game extends Component<GameProps, GameState> {
           color="transparent"
           sx={{ top: "auto", bottom: 0 }}
         >
-          <Toolbar>
-            <Grid container spacing={2}>
-              {this.slots.map((_, idx) => (
-                <Grid item xs={2} key={idx}>
+          <Toolbar sx={{ paddingX: 0 }}>
+            <Stack
+              direction={"column"}
+              flexWrap={"nowrap"}
+              sx={{ width: "100%" }}
+            >
+              {chunks(
+                this.slots.map((_, idx) => (
                   <Button
                     variant="outlined"
                     onClick={() => {
@@ -444,14 +420,24 @@ export class Game extends Component<GameProps, GameState> {
                       borderColor: "black",
                       color: "black",
                       fontWeight: "bold",
+                      paddingX: 0,
+                      minWidth: 0,
+                      flexGrow: 1,
                     }}
                     disabled={this.freezeGame}
                   >
                     {this.slots[idx]}
                   </Button>
-                </Grid>
-              ))}
-            </Grid>
+                )),
+                6,
+              )
+                .map((buttons) => (
+                  <Stack direction={"row"} spacing={0.5} flexWrap={"nowrap"}>
+                    {buttons}
+                  </Stack>
+                ))
+                .toArray()}
+            </Stack>
           </Toolbar>
         </AppBar>
         <Dialog
@@ -492,19 +478,9 @@ export class Game extends Component<GameProps, GameState> {
               )}{" "}
               秒
             </DialogContentText>
-            <DialogContentText>
-              遲啲仲會出新 app，麻煩大家幫手 fol 下我哋 ig{" "}
-              <a
-                href="https://www.instagram.com/learnmer/?utm_source=ig_web_button_share_sheet&igshid=MmVlMjlkMTBhMg=="
-                target="_blank"
-              >
-                @learnmer
-              </a>{" "}
-              留意我哋嘅動向啦 🙏。
-            </DialogContentText>
           </DialogContent>
         </Dialog>
-      </>
+      </Container>
     )
   }
 }
