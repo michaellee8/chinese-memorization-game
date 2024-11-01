@@ -4,7 +4,7 @@ import VitePluginRadar from "vite-plugin-radar"
 
 // https://vitejs.dev/config/
 export default defineConfig({
-  plugins: [react(), VitePluginRadar({ analytics: [{ id: "G-LLEGJGWT7L" }] })],
+  plugins: [react(), VitePluginRadar({ analytics: [{ id: "G-5S1Q1RGDMM" }] })],
   server: {
     open: true,
   },
