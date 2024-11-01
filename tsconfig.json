@@ -17,10 +17,7 @@
     "resolveJsonModule": true,
     "isolatedModules": true,
     "noEmit": true,
-    "jsx": "react-jsx",
-    "types": [
-      "testing-library__jest-dom"
-    ]
+    "jsx": "react-jsx"
   },
   "include": [
     "src"
