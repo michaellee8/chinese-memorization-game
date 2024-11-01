@@ -18,7 +18,7 @@ export class PriorityQueue<T extends PQValuer> implements heap.Heap<Item<T>> {
   }
 
   less(i: number, j: number): boolean {
-    return this.arr[i].v.pqValue() < this.arr[i].v.pqValue()
+    return this.arr[i].v.pqValue() < this.arr[j].v.pqValue()
   }
 
   swap(i: number, j: number): void {
@@ -55,7 +55,7 @@ export class PriorityQueue<T extends PQValuer> implements heap.Heap<Item<T>> {
   }
 
   gPush(value: T): void {
-    let item: Item<T> = { v: value, index: -1 }
+    let item: Item<T> = { v: value, index: 0 }
     heap.push(this, item)
   }
 

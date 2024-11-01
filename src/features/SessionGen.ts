@@ -50,7 +50,9 @@ export function generateGameSessionDataFromParagraphs(
     let pWordsIdx = config.startTipsSize
     let optionBucket = new PriorityQueue<OptionBucketEntry>([])
 
-    let headOptionsPositions = Array(config.optionSequenceSize).map((_, i) => i)
+    let headOptionsPositions = Array.from(
+      Array(config.optionSequenceSize).keys(),
+    )
     shuffleArray(headOptionsPositions, rng)
 
     for (let i = pWordsIdx; i < pWordsIdx + config.optionSequenceSize; i++) {

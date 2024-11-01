@@ -12,7 +12,7 @@ export namespace heap {
   }
   export function init<T>(h: Heap<T>): void {
     const n = h.len()
-    for (let i = Math.floor(n / 2) - 1; i >= 0; i--) {
+    for (let i = Math.trunc(n / 2) - 1; i >= 0; i--) {
       down(h, i, n)
     }
   }
@@ -44,7 +44,7 @@ export namespace heap {
 
   function up<T>(h: Heap<T>, j: number): void {
     while (true) {
-      let i = Math.floor((j - 1) / 2)
+      let i = Math.trunc((j - 1) / 2)
       if (i === j || !h.less(j, i)) {
         break
       }

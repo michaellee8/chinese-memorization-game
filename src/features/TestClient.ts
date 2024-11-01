@@ -53,7 +53,7 @@ export class TestClient {
   }
 
   setupParagraphState(sequenceSize: number): void {
-    this.slots = Array(sequenceSize).map(() => "")
+    this.slots = Array(sequenceSize).fill("")
     this.optionToSlotMap = new Map()
     this.slotToOptionMap = new Map()
     for (let i = 0; i < sequenceSize; i++) {

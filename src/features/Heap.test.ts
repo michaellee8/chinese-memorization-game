@@ -139,7 +139,7 @@ test("heap test remove 2", () => {
 
   let m = new Map<number, boolean>()
   while (h.len() > 0) {
-    m.set(heap.remove(h, Math.floor((h.len() - 1) / 2)), true)
+    m.set(heap.remove(h, Math.trunc((h.len() - 1) / 2)), true)
     h.verify(0)
   }
   expect(m.size).toEqual(N)
