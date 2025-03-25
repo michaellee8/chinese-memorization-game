@@ -403,7 +403,7 @@ export class Game extends Component<GameProps, GameState> {
               flexWrap={"nowrap"}
               sx={{ width: "100%" }}
             >
-              {chunks(
+              {Array.from(chunks(
                 this.slots.map((_, idx) => (
                   <Button
                     variant="outlined"
@@ -430,13 +430,12 @@ export class Game extends Component<GameProps, GameState> {
                   </Button>
                 )),
                 6,
-              )
+              ))
                 .map((buttons) => (
                   <Stack direction={"row"} spacing={0.5} flexWrap={"nowrap"}>
                     {buttons}
                   </Stack>
-                ))
-                .toArray()}
+                ))}
             </Stack>
           </Toolbar>
         </AppBar>
